@@ -93,7 +93,7 @@ Backend blocks cannot reference variables. Change these literal values only if t
 If `terraform init` fails with `NoSuchBucket`, create the backend bucket first:
 
 ```powershell
-cd "d:\ECS Cluster\terraform-ecs-fargate-spot\bootstrap\backend"
+cd "d:\ECS Cluster\terraform-ecs-fargate-spot\backend"
 terraform init
 terraform apply
 cd "d:\ECS Cluster\terraform-ecs-fargate-spot"
