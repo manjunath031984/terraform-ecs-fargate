@@ -39,8 +39,7 @@ terraform-ecs-fargate-spot/
 |-- outputs.tf
 |-- main.tf
 |-- README.md
-|-- bootstrap/
-|   `-- backend/
+|-- backend/
 |-- environments/
 |   |-- dev.tfvars
 |   |-- qa.tfvars
