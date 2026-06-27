@@ -5,7 +5,7 @@ Creates the S3 bucket required by the root Terraform S3 backend.
 Run this once before `terraform init` in the project root:
 
 ```bash
-cd bootstrap/backend
+cd backend
 terraform init
 terraform apply
 cd ../..
