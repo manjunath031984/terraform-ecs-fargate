@@ -102,6 +102,16 @@ terraform init
 
 The root backend uses `use_lockfile = true`, so a DynamoDB lock table is not required for Terraform versions that support S3 native state locking.
 
+When deleting the bootstrap backend bucket, Terraform is configured to empty all objects and object versions during destroy. Recreate the destroy plan after this change so the plan includes `force_destroy = true`:
+
+```powershell
+cd "d:\terraform-ecs-fargate-spot\backend"
+terraform plan -destroy -out=destroy.tfplan
+terraform apply destroy.tfplan
+```
+
+If you want to preserve bucket contents, override this with `-var="force_destroy_state_bucket=false"`. Without forced cleanup, AWS rejects deletion of the versioned state bucket while any current or noncurrent object versions remain.
+
 ## Terraform Commands
 
 Initialize:

@@ -1,8 +1,9 @@
 resource "aws_s3_bucket" "state" {
-  bucket = var.state_bucket_name
+  bucket        = var.state_bucket_name
+  force_destroy = var.force_destroy_state_bucket
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 

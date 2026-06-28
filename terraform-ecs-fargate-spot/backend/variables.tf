@@ -19,5 +19,11 @@ variable "project_name" {
 variable "state_bucket_name" {
   description = "S3 bucket name for Terraform remote state."
   type        = string
-  default     = "ecs-demo-terraform-state-980921723264-us-east-1"
+  default     = "ecs-demo-us-east-1"
+}
+
+variable "force_destroy_state_bucket" {
+  description = "When true, delete all objects and object versions from the Terraform state bucket during destroy. Set to false only when intentionally preserving bucket contents."
+  type        = bool
+  default     = true
 }
