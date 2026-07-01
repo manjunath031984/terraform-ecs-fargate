@@ -1,5 +1,8 @@
 pipeline {
   agent any
+  tools {
+        terraform 'terraform'
+    }
 
   options {
     buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '30'))
