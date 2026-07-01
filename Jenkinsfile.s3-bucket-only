@@ -2,7 +2,6 @@ pipeline {
   agent any
 
   options {
-    ansiColor('xterm')
     buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '30'))
     disableConcurrentBuilds()
     skipDefaultCheckout(true)
