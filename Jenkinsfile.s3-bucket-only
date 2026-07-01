@@ -59,37 +59,22 @@ tools {
     stage('Terraform Init') {
     steps {
         withCredentials([
-            usernamePassword(
-                credentialsId: 'aws-terraform-prod',
-                usernameVariable: 'AWS_ACCESS_KEY_ID',
-                passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-            )
-        ]) {
-            sh '''
-                set -eux
+    [$class: 'AmazonWebServicesCredentialsBinding',
+     credentialsId: 'aws-terraform-prod']
+]) {
+    sh '''
+        export AWS_DEFAULT_REGION="${AWS_REGION}"
 
-                export AWS_DEFAULT_REGION="${AWS_REGION}"
+        aws sts get-caller-identity
 
-                echo "===== AWS Identity ====="
-                aws sts get-caller-identity
-
-                echo "===== Checking Backend Bucket ====="
-                aws s3 ls
-
-                aws s3api head-bucket --bucket "${BACKEND_BUCKET}" || true
-
-                echo "===== Terraform Init ====="
-
-                terraform -chdir="${TF_ROOT}" init \
-                  -input=false \
-                  -reconfigure \
-                  -backend-config="bucket=${BACKEND_BUCKET}" \
-                  -backend-config="key=${BACKEND_KEY}" \
-                  -backend-config="region=${AWS_REGION}" \
-                  -backend-config="encrypt=true"
-            '''
-        }
-    }
+        terraform -chdir="${TF_ROOT}" init \
+          -input=false \
+          -reconfigure \
+          -backend-config="bucket=${BACKEND_BUCKET}" \
+          -backend-config="key=${BACKEND_KEY}" \
+          -backend-config="region=${AWS_REGION}" \
+          -backend-config="encrypt=true"
+    '''
 }
     stage('Terraform Plan') {
       steps {
