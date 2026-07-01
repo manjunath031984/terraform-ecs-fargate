@@ -1,0 +1,164 @@
+pipeline {
+  agent any
+
+  options {
+    ansiColor('xterm')
+    buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '30'))
+    disableConcurrentBuilds()
+    skipDefaultCheckout(true)
+    timestamps()
+    timeout(time: 30, unit: 'MINUTES')
+  }
+
+  parameters {
+    choice(name: 'TF_WORKSPACE', choices: ['dev', 'qa', 'prod'], description: 'Terraform workspace to select or create.')
+    string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region used by Terraform and verification commands.')
+    string(name: 'AWS_ACCOUNT_ID', defaultValue: '980921723264', description: 'AWS account ID allowed for deployment.')
+    string(name: 'BUCKET_NAME', defaultValue: 'trs-dev-s3-only-980921723264-us-east-1', description: 'Globally unique S3 bucket name to create.')
+    string(name: 'BACKEND_BUCKET', defaultValue: 'ecs-demo-terraform-state-980921723264-us-east-1', description: 'S3 bucket for Terraform remote state.')
+    string(name: 'BACKEND_KEY', defaultValue: 's3-bucket-only/terraform.tfstate', description: 'S3 key for this job Terraform remote state.')
+    booleanParam(name: 'ENABLE_VERSIONING', defaultValue: true, description: 'Enable S3 bucket versioning.')
+    booleanParam(name: 'AUTO_APPROVE', defaultValue: false, description: 'Skip manual approval. Keep disabled for production.')
+  }
+
+  environment {
+    AWS_DEFAULT_REGION = "${params.AWS_REGION}"
+    AWS_REGION         = "${params.AWS_REGION}"
+    TF_IN_AUTOMATION   = 'true'
+    TF_INPUT           = 'false'
+    TF_ROOT            = 's3-bucket-only'
+    TF_PLAN_FILE       = 'tfplan'
+    TF_PLAN_TEXT       = 'tfplan.txt'
+    TF_OUTPUT_JSON     = 'terraform-output.json'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Terraform Format') {
+      steps {
+        sh 'terraform fmt -check -recursive -diff s3-bucket-only'
+      }
+    }
+
+    stage('Terraform Validate') {
+      steps {
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
+          terraform -chdir="${TF_ROOT}" init -backend=false -input=false
+          terraform -chdir="${TF_ROOT}" validate
+        '''
+      }
+    }
+
+    stage('Terraform Init') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-terraform-prod']]) {
+          sh '''#!/usr/bin/env bash
+            set -euo pipefail
+            terraform -chdir="${TF_ROOT}" init \
+              -input=false \
+              -reconfigure \
+              -backend-config="bucket=${BACKEND_BUCKET}" \
+              -backend-config="key=${BACKEND_KEY}" \
+              -backend-config="region=${AWS_REGION}" \
+              -backend-config="encrypt=true" \
+              -backend-config="use_lockfile=true"
+          '''
+        }
+      }
+    }
+
+    stage('Terraform Plan') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-terraform-prod']]) {
+          sh '''#!/usr/bin/env bash
+            set -euo pipefail
+            terraform -chdir="${TF_ROOT}" workspace select "${TF_WORKSPACE}" || terraform -chdir="${TF_ROOT}" workspace new "${TF_WORKSPACE}"
+            terraform -chdir="${TF_ROOT}" plan \
+              -input=false \
+              -lock=true \
+              -lock-timeout=5m \
+              -var="aws_region=${AWS_REGION}" \
+              -var="aws_account_id=${AWS_ACCOUNT_ID}" \
+              -var="environment=${TF_WORKSPACE}" \
+              -var="bucket_name=${BUCKET_NAME}" \
+              -var="enable_versioning=${ENABLE_VERSIONING}" \
+              -out="${TF_PLAN_FILE}"
+            terraform -chdir="${TF_ROOT}" show -no-color "${TF_PLAN_FILE}" | tee "${TF_PLAN_TEXT}"
+          '''
+        }
+      }
+    }
+
+    stage('Manual Approval') {
+      when {
+        expression { !params.AUTO_APPROVE }
+      }
+      steps {
+        script {
+          input(
+            message: "Create S3 bucket '${params.BUCKET_NAME}' in ${params.AWS_REGION}?",
+            ok: 'Create bucket',
+            submitterParameter: 'APPROVED_BY'
+          )
+        }
+      }
+    }
+
+    stage('Terraform Apply') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-terraform-prod']]) {
+          sh '''#!/usr/bin/env bash
+            set -euo pipefail
+            terraform -chdir="${TF_ROOT}" apply \
+              -input=false \
+              -lock=true \
+              -lock-timeout=5m \
+              -auto-approve \
+              "${TF_PLAN_FILE}"
+            terraform -chdir="${TF_ROOT}" output -json > "${TF_OUTPUT_JSON}"
+          '''
+        }
+      }
+    }
+
+    stage('Verify Bucket') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-terraform-prod']]) {
+          sh '''#!/usr/bin/env bash
+            set -euo pipefail
+            CREATED_BUCKET="$(terraform -chdir="${TF_ROOT}" output -raw s3_bucket_name)"
+            test "${CREATED_BUCKET}" = "${BUCKET_NAME}"
+            aws s3api head-bucket --bucket "${CREATED_BUCKET}"
+            aws s3api get-public-access-block --bucket "${CREATED_BUCKET}"
+            aws s3api get-bucket-versioning --bucket "${CREATED_BUCKET}"
+            aws s3api get-bucket-encryption --bucket "${CREATED_BUCKET}"
+            echo "Verified S3 bucket: ${CREATED_BUCKET}"
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'tfplan.txt,terraform-output.json', allowEmptyArchive: true, fingerprint: true, onlyIfSuccessful: false
+    }
+    failure {
+      echo '''S3 bucket-only pipeline failed. Review tfplan.txt and Jenkins console output, then rerun this job from the same commit, workspace, backend, and bucket name to reconcile Terraform state.'''
+    }
+    cleanup {
+      sh '''#!/usr/bin/env bash
+        rm -f "${TF_ROOT}/${TF_PLAN_FILE}" "${TF_OUTPUT_JSON}" "${TF_PLAN_TEXT}"
+        rm -rf "${TF_ROOT}/.terraform"
+      '''
+      cleanWs(deleteDirs: true, disableDeferredWipeout: true, notFailBuild: true)
+    }
+  }
+}
+
