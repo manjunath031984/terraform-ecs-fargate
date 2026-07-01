@@ -56,25 +56,33 @@ tools {
       }
     }
 
-    stage('Terraform Init') {
+   stage('Terraform Init') {
     steps {
         withCredentials([
-    [$class: 'AmazonWebServicesCredentialsBinding',
-     credentialsId: 'aws-terraform-prod']
-]) {
-    sh '''
-        export AWS_DEFAULT_REGION="${AWS_REGION}"
+            [$class: 'AmazonWebServicesCredentialsBinding',
+             credentialsId: 'aws-terraform-prod']
+        ]) {
+            sh '''#!/usr/bin/env bash
+                set -euo pipefail
 
-        aws sts get-caller-identity
+                export AWS_DEFAULT_REGION="${AWS_REGION}"
 
-        terraform -chdir="${TF_ROOT}" init \
-          -input=false \
-          -reconfigure \
-          -backend-config="bucket=${BACKEND_BUCKET}" \
-          -backend-config="key=${BACKEND_KEY}" \
-          -backend-config="region=${AWS_REGION}" \
-          -backend-config="encrypt=true"
-    '''
+                echo "===== AWS Identity ====="
+                aws sts get-caller-identity
+
+                echo "===== Terraform Init ====="
+
+                terraform -chdir="${TF_ROOT}" init \
+                  -input=false \
+                  -reconfigure \
+                  -backend-config="bucket=${BACKEND_BUCKET}" \
+                  -backend-config="key=${BACKEND_KEY}" \
+                  -backend-config="region=${AWS_REGION}" \
+                  -backend-config="encrypt=true" \
+                  -backend-config="use_lockfile=true"
+            '''
+        }
+    }
 }
     stage('Terraform Plan') {
       steps {
