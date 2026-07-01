@@ -19,7 +19,7 @@ variable "project_name" {
 variable "state_bucket_name" {
   description = "S3 bucket name for Terraform remote state."
   type        = string
-  default     = "ecs-demo-us-east-1"
+  default     = "demo-ecs-us-east-1"
 }
 
 variable "force_destroy_state_bucket" {
